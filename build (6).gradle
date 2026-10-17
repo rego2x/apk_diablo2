@@ -1,0 +1,4 @@
+// 灰の街道 — ASHEN ROADS : Android (WebView) ルートビルド設定
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
