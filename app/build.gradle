@@ -1,0 +1,96 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ---------------------------------------------------------------
+// ゲーム本体 (リポジトリ直下の index.html、無ければ assets/index.html) の VERSION='x.y.z' を
+// 読み取り、APK の versionName / versionCode に自動反映する。
+// ---------------------------------------------------------------
+def gameVersion = { ->
+    def f = rootProject.file("index.html")
+    if (!f.exists()) f = file("src/main/assets/index.html")
+    if (f.exists()) {
+        def m = (f.getText("UTF-8") =~ /VERSION\s*=\s*['"](\d+)\.(\d+)\.(\d+)['"]/)
+        if (m.find()) {
+            return [name: "${m.group(1)}.${m.group(2)}.${m.group(3)}".toString(),
+                    code: (m.group(1) as int) * 10000 + (m.group(2) as int) * 100 + (m.group(3) as int)]
+        }
+    }
+    return [name: "0.0.0", code: 1]
+}()
+
+// 親フォルダ (ゲーム配布フォルダ直下にこのプロジェクトを置いた場合) の
+// index.html が新しければ assets へ同期する。
+tasks.register("syncGame") {
+    doLast {
+        def src = rootProject.file("index.html")
+        def dst = file("src/main/assets/index.html")
+        if (src.exists()) {
+            dst.parentFile.mkdirs()
+            dst.bytes = src.bytes
+            println("syncGame: copied index.html -> assets/index.html")
+        } else {
+            println("syncGame: index.html not found, using bundled assets/index.html")
+        }
+    }
+}
+
+// CI 署名用 (任意)
+def ciKeystore = System.getenv("ASHEN_KEYSTORE")
+
+android {
+    namespace 'jp.ashenroads.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "jp.ashenroads.app"
+        minSdk 24
+        targetSdk 34
+        versionCode gameVersion.code
+        versionName gameVersion.name
+        println("Ashen Roads game version: ${gameVersion.name} (code ${gameVersion.code})")
+    }
+
+    signingConfigs {
+        if (ciKeystore != null && file(ciKeystore).exists()) {
+            ci {
+                storeFile file(ciKeystore)
+                storePassword System.getenv("ASHEN_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ASHEN_KEY_ALIAS")
+                keyPassword System.getenv("ASHEN_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            // 署名設定が無い場合は未署名APKになる。署名済みを作るには
+            // ASHEN_KEYSTORE 等の環境変数を設定する (README 参照)。
+            if (ciKeystore != null && file(ciKeystore).exists()) {
+                signingConfig signingConfigs.ci
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "AshenRoads-v${gameVersion.name}-${variant.buildType.name}.apk"
+        }
+    }
+}
+
+preBuild.dependsOn("syncGame")
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

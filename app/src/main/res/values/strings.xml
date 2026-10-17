@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">灰の街道</string>
+    <string name="exit_title">ゲームを終了しますか？</string>
+    <string name="exit_message">進行は自動保存されています。</string>
+    <string name="exit_yes">終了</string>
+    <string name="exit_no">戻る</string>
+    <string name="saved_to">保存しました: %1$s</string>
+    <string name="save_failed">保存に失敗しました: %1$s</string>
+    <string name="pick_json">セーブJSONを選択</string>
+</resources>
