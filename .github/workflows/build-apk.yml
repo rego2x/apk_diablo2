@@ -1,0 +1,85 @@
+# 灰の街道 — ASHEN ROADS : Android APK ビルド (GitHub Actions)
+#
+# 動作: push / 手動実行 (Actions タブ → Run workflow) で APK を作成し、
+#       Artifacts として保存する。タグ v1.2.3 を push すると Release にも添付する。
+# 必要なもの: このリポジトリだけ。Android SDK は GitHub のランナーに同梱。
+name: Build Android APK
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # リポジトリ直下に index.html を置いた場合はそれを最新のゲーム本体として採用する
+      - name: Sync game file (optional root index.html)
+        run: |
+          if [ -f index.html ]; then
+            cp index.html app/src/main/assets/index.html
+            echo "Using repository-root index.html"
+          fi
+          grep -o "VERSION='[0-9.]*'" app/src/main/assets/index.html || true
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Build release APK (unsigned unless secrets are set)
+        env:
+          ASHEN_KEYSTORE_B64: ${{ secrets.ASHEN_KEYSTORE_B64 }}
+          ASHEN_KEYSTORE_PASSWORD: ${{ secrets.ASHEN_KEYSTORE_PASSWORD }}
+          ASHEN_KEY_ALIAS: ${{ secrets.ASHEN_KEY_ALIAS }}
+          ASHEN_KEY_PASSWORD: ${{ secrets.ASHEN_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ASHEN_KEYSTORE_B64" ]; then
+            echo "$ASHEN_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export ASHEN_KEYSTORE="$RUNNER_TEMP/release.keystore"
+            echo "Signing release APK with provided keystore"
+          fi
+          ./gradlew --no-daemon assembleRelease
+
+      - name: List outputs
+        run: find app/build/outputs/apk -name "*.apk" -exec ls -la {} \;
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AshenRoads-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AshenRoads-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+
+      - name: Attach APKs to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
